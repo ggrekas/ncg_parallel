@@ -1,7 +1,7 @@
 from dolfin import*
 import warnings
-from scipy.optimize import linesearch
-
+# from scipy.optimize import linesearch
+import myPar_line_search as linesearch
 
 
 def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
@@ -31,11 +31,13 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
 
     func_calls, f = wrap_function(f, args)
     grad_calls, myfprime = wrap_function(fprime, args)
-    gfk_ar = myfprime(x0.array()) #change meeeeeee
+
 
     comm = mpi_comm_world()
-    gfk = PETScVector(comm, x0.size())
-    gfk.set_local(gfk_ar)
+    # gfk_ar = myfprime(x0.array()) #change meeeeeee
+    # gfk = PETScVector(comm, x0.size())
+    # gfk.set_local(gfk_ar)
+    gfk = myfprime(x0)  # change meeeeeee
 
     k = 0
     xk = x0
@@ -44,9 +46,8 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
     old_fval = f(xk)
     old_old_fval = old_fval + gfk.norm('l2') / 2.0
 
-    pk = PETScVector(comm, x0.size() )
-
-    pk.axpy(-1, gfk) #pk.set_local(-gfk.array() ) #pk = -gfk
+    pk = x0.copy()
+    pk.set_local(-gfk.array() ) #pk = -gfk
     gnorm = gfk.norm('linf')  #gnorm = vecnorm(gfk, ord=norm)
     while (gnorm > gtol) and (k < maxiter):
         deltak = gfk.inner(gfk) #numpy.dot(gfk, gfk)
@@ -56,10 +57,9 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
             # pk0 = pk.gather_on_zero()
             # gfk0 = gfk.gather_on_zero()
 
-            alpha_k, fc, gc, old_fval, old_old_fval, gfkp1_ar = \
-                line_search_wolfe12(f, myfprime, xk.array(), pk.array(), gfk.array(),
-                                    old_fval, old_old_fval, c2=0.4, amin=1e-100,
-                                    amax=1e100)
+            alpha_k, fc, gc, old_fval, old_old_fval, gfkp1 = \
+                line_search_wolfe12(f, myfprime, xk, pk, gfk,
+                                    old_fval, old_old_fval, c2=0.4)
         except _LineSearchError:
             # Line search failed to find a better solution.
             warnflag = 2
@@ -67,19 +67,17 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
 
         xk.axpy(alpha_k,pk)     #xk = xk + alpha_k * pk
 
-        gfkp1 = PETScVector(comm, x0.size())
-        if gfkp1_ar is not None:
-            gfkp1.set_local(gfkp1_ar)
-        else:
-            gfkp1.set_local( myfprime(xk) ) #malloc?
+        if gfkp1 is None:
+            gfkp1 = myfprime(xk)  #malloc?
 
         # is the substruction in set local faster or slower than axpy
-        yk = PETScVector(comm, x0.size());yk.set_local(gfkp1.array() - gfk.array())
-        beta_k = max(0, yk.inner(gfkp1) / deltak)
+        gfk.set_local(gfkp1.array() - gfk.array())
+        beta_k = max(0, gfk.inner(gfkp1) / deltak)
 
         pk.set_local(-gfkp1.array() + beta_k * pk.array() )
         #pk = -gfkp1 + beta_k * pk
-        gfk = gfkp1
+        del gfk; gfk = gfkp1
+
         gnorm = gfk.norm(norm) #gnorm = vecnorm(gfk, ord=norm)
         if callback is not None:
             callback(xk)
@@ -91,7 +89,8 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
     if 0 == mpiRank:
         _print_result_info(warnflag, fval, k, maxiter, disp)
 
-    return xk.array()
+    del pk
+    return xk
 
 
 def _print_result_info(warnflag, fval, k, maxiter, disp=False):
@@ -127,7 +126,6 @@ def _print_result_info(warnflag, fval, k, maxiter, disp=False):
 
     return
 
-
             # standard status messages of optimizers
 _status_message = {'success': 'Optimization terminated successfully.',
                   'maxfev': 'Maximum number of function evaluations has '
@@ -136,7 +134,6 @@ _status_message = {'success': 'Optimization terminated successfully.',
                   'exceeded.',
                   'pr_loss': 'Desired error not necessarily achieved due '
                   'to precision loss.'}
-
 
 
 def line_search_wolfe12(f, fprime, xk, pk, gfk, old_fval, old_old_fval, **kwargs):
@@ -166,6 +163,8 @@ def line_search_wolfe12(f, fprime, xk, pk, gfk, old_fval, old_old_fval, **kwargs
 
     return ret
 
+
+
 class _LineSearchError(RuntimeError):
     pass
 
@@ -179,7 +178,6 @@ def wrap_function(function, args):
         return function(*(wrapper_args + args))
 
     return ncalls, function_wrapper
-
 
 
 
