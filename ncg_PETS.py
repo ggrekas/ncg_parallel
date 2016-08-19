@@ -44,10 +44,11 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
 
     # Sets the initial step guess to dx ~ 1
     old_fval = f(xk)
-    old_old_fval = old_fval + gfk.norm('l2') / 2.0
+    old_old_fval = old_fval + gfk.norm('l2') / 2.0 #None #
 
     pk = x0.copy()
     pk.set_local(-gfk.array() ) #pk = -gfk
+
     gnorm = gfk.norm('linf')  #gnorm = vecnorm(gfk, ord=norm)
     while (gnorm > gtol) and (k < maxiter):
         deltak = gfk.inner(gfk) #numpy.dot(gfk, gfk)

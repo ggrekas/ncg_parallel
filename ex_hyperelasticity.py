@@ -11,10 +11,10 @@ import time
 
 # Optimization options for the form compiler
 parameters["mesh_partitioner"] = "SCOTCH"  # "ParMETIS" #
-
-# parameters["form_compiler"]["precision"] = 1000
+#
+# # parameters["form_compiler"]["precision"] = 1000
 parameters["allow_extrapolation"]=True
-parameters["ghost_mode"] = "shared_facet"
+#parameters["ghost_mode"] = "shared_facet"
 parameters["form_compiler"]["cpp_optimize"] = True
 parameters["form_compiler"]["cpp_optimize_flags"] = \
 "-O3 -ffast-math -march=native"
@@ -28,11 +28,11 @@ ffc_options = {"optimize": True, \
 
 k=10
 epsilon = None
-nx, ny = 100, 100
+nx, ny = 40, 40
 mesh = UnitSquareMesh(nx, ny)
-import mshr
-domain = mshr.Rectangle(dolfin.Point(0, 0), dolfin.Point(1, 1))
-mesh = mshr.generate_mesh(domain, 64)
+# import mshr
+# domain = mshr.Rectangle(dolfin.Point(0, 0), dolfin.Point(1, 1))
+# mesh = mshr.generate_mesh(domain, 64)
 
 
 boundary_parts = MeshFunction("size_t", mesh, mesh.topology().dim()-1)
@@ -59,7 +59,7 @@ Gamma_1.mark(boundary_parts, 1)
 class UpDown(SubDomain):
     def inside(self, x, on_boundary):
         tol = 1E-14   # tolerance for coordinate comparisons
-        return on_boundary and (abs(x[1]) < tol or abs(1 - x[1]) < tol) 
+        return on_boundary and (abs(x[1]) < tol or abs(1 - x[1]) < tol)
 
 Gamma_2 = UpDown()
 Gamma_2.mark(boundary_parts, 2)
@@ -113,7 +113,7 @@ E, nu = 10.0, 0.3
 mu, lmbda = Constant(E/(2*(1 + nu))), Constant(E*nu/((1 + nu)*(1 - 2*nu)))
 
 # Stored strain energy density (compressible neo-Hookean model)
-psi = (mu/2)*(Ic - 2) - mu*ln(J) + (lmbda/2)*(ln(J))**2 
+psi = (mu/2)*(Ic - 2) - mu*ln(J) + (lmbda/2)*(ln(J))**2
 
 
 print k, epsilon, 'n = ', nx, ny
@@ -161,6 +161,7 @@ def f(x, *args):
     # u.vector().set_local(x.array())
     u.vector()[:] = x.array()
     # u.vector().apply('insert')
+    #u.vector().update_ghost_values()
     u.vector().apply('')
 
     aPi = assemble(Pi)
@@ -183,6 +184,7 @@ def f(x, *args):
 def grad_f(x, *args):
     # print 'in grad f', x
     u.vector()[:] = x.array()
+   # u.vector().update_ghost_values()
     # u.vector().set_local(x.array())
     # u.vector().apply('insert')
     u.vector().apply('')

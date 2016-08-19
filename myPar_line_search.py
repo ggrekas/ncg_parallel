@@ -1,5 +1,14 @@
-# TODO: account for memory leaks
+from dolfin import *
+import numpy as np
+from scipy.optimize import minpack2
+from warnings import warn
 
+
+# TODO: account for memory leaks (gval)
+
+
+class LineSearchWarning(RuntimeWarning):
+    pass
 
 def line_search_wolfe1(f, fprime, xk, pk, gfk=None,
                        old_fval=None, old_old_fval=None,
@@ -15,11 +24,11 @@ f : callable
     Function `f(x)`
 fprime : callable
     Gradient of `f`
-xk : array_like
+xk : array_like (PETCs vector)
     Current point
-pk : array_like
+pk : array_like (PETCs vector)
     Search direction
-gfk : array_like, optional
+gfk : array_like (PETCs vector), optional
     Gradient of `f` at point `xk`
 old_fval : float, optional
     Value of `f` at point `xk`
@@ -52,16 +61,20 @@ gval : array
 
     def phi(s):
         fc[0] += 1
+        xk.apply('')
         xk_c = xk.copy()
         xk_c.axpy(s, pk)
+        # xk_c.apply('')
         f_val = f(xk_c, *args)
         del xk_c
         return  f_val# modify me
 
 
     def derphi(s):
+        xk.apply('')
         xk_c = xk.copy()
         xk_c.axpy(s, pk)
+        # xk_c.apply('')
         gval[0] = fprime(xk_c, *newargs) # modify me
         del xk_c
 
@@ -222,6 +235,7 @@ def line_search_wolfe2(f, myfprime, xk, pk, gfk=None, old_fval=None,
 
     def phi(alpha):
         fc[0] += 1
+        xk.apply('')
         xk_c = xk.copy()
         xk_c.axpy(alpha, pk)
         f_val = f(xk_c, *args)
@@ -235,9 +249,10 @@ def line_search_wolfe2(f, myfprime, xk, pk, gfk=None, old_fval=None,
             fprime = myfprime[0]
             newargs = (f, eps) + args
 
+            xk.apply('')
             xk_c = xk.copy()
-            xk_c.axpy(s, pk)
-            gval[0] = fprime(xk + alpha * pk, *newargs)  # store for later use
+            xk_c.axpy(alpha, pk)
+            gval[0] = fprime(xk_c, *newargs)  # store for later use
 
             # d_val = gval[0].inner(pk)  # np.dot(gval[0], pk) # modify me
             # del gval[0]
@@ -248,9 +263,10 @@ def line_search_wolfe2(f, myfprime, xk, pk, gfk=None, old_fval=None,
         def derphi(alpha):
             gc[0] += 1
 
+            xk.apply('')
             xk_c = xk.copy()
-            xk_c.axpy(s, pk)
-            gval[0] = fprime(xk + alpha * pk, *args)  # store for later use
+            xk_c.axpy(alpha, pk)
+            gval[0] = fprime(xk_c, *args)  # store for later use
             del xk_c
 
             # d_val = gval[0].inner(pk)  # np.dot(gval[0], pk) # modify me
@@ -394,3 +410,132 @@ def scalar_search_wolfe2(phi, derphi=None, phi0=None,
 
     return alpha_star, phi_star, phi0, derphi_star
 
+
+def _zoom(a_lo, a_hi, phi_lo, phi_hi, derphi_lo,
+          phi, derphi, phi0, derphi0, c1, c2):
+    """
+    Part of the optimization algorithm in `scalar_search_wolfe2`.
+    """
+    maxiter = 10
+    i = 0
+    delta1 = 0.2  # cubic interpolant check
+    delta2 = 0.1  # quadratic interpolant check
+    phi_rec = phi0
+    a_rec = 0
+
+    while True:
+        # interpolate to find a trial step length between a_lo and
+        # a_hi Need to choose interpolation here.  Use cubic
+        # interpolation and then if the result is within delta *
+        # dalpha or outside of the interval bounded by a_lo or a_hi
+        # then use quadratic interpolation, if the result is still too
+        # close, then use bisection
+
+        dalpha = a_hi - a_lo
+        if dalpha < 0:
+            a, b = a_hi, a_lo
+        else:
+            a, b = a_lo, a_hi
+
+        # minimizer of cubic interpolant
+        # (uses phi_lo, derphi_lo, phi_hi, and the most recent value of phi)
+        #
+        # if the result is too close to the end points (or out of the
+        # interval) then use quadratic interpolation with phi_lo,
+        # derphi_lo and phi_hi if the result is stil too close to the
+        # end points (or out of the interval) then use bisection
+
+        if (i > 0):
+            cchk = delta1 * dalpha
+            a_j = _cubicmin(a_lo, phi_lo, derphi_lo, a_hi, phi_hi,
+                            a_rec, phi_rec)
+        if (i == 0) or (a_j is None) or (a_j > b - cchk) or (a_j < a + cchk):
+            qchk = delta2 * dalpha
+            a_j = _quadmin(a_lo, phi_lo, derphi_lo, a_hi, phi_hi)
+            if (a_j is None) or (a_j > b - qchk) or (a_j < a + qchk):
+                a_j = a_lo + 0.5 * dalpha
+
+        # Check new value of a_j
+
+        phi_aj = phi(a_j)
+        if (phi_aj > phi0 + c1 * a_j * derphi0) or (phi_aj >= phi_lo):
+            phi_rec = phi_hi
+            a_rec = a_hi
+            a_hi = a_j
+            phi_hi = phi_aj
+        else:
+            derphi_aj = derphi(a_j)
+            if abs(derphi_aj) <= -c2 * derphi0:
+                a_star = a_j
+                val_star = phi_aj
+                valprime_star = derphi_aj
+                break
+            if derphi_aj * (a_hi - a_lo) >= 0:
+                phi_rec = phi_hi
+                a_rec = a_hi
+                a_hi = a_lo
+                phi_hi = phi_lo
+            else:
+                phi_rec = phi_lo
+                a_rec = a_lo
+            a_lo = a_j
+            phi_lo = phi_aj
+            derphi_lo = derphi_aj
+        i += 1
+        if (i > maxiter):
+            # Failed to find a conforming step size
+            a_star = None
+            val_star = None
+            valprime_star = None
+            break
+    return a_star, val_star, valprime_star
+
+def _quadmin(a, fa, fpa, b, fb):
+    """
+    Finds the minimizer for a quadratic polynomial that goes through
+    the points (a,fa), (b,fb) with derivative at a of fpa,
+    """
+    # f(x) = B*(x-a)^2 + C*(x-a) + D
+    with np.errstate(divide='raise', over='raise', invalid='raise'):
+        try:
+            D = fa
+            C = fpa
+            db = b - a * 1.0
+            B = (fb - D - C * db) / (db * db)
+            xmin = a - C / (2.0 * B)
+        except ArithmeticError:
+            return None
+    if not np.isfinite(xmin):
+        return None
+    return xmin
+
+def _cubicmin(a, fa, fpa, b, fb, c, fc):
+    """
+    Finds the minimizer for a cubic polynomial that goes through the
+    points (a,fa), (b,fb), and (c,fc) with derivative at a of fpa.
+    If no minimizer can be found return None
+    """
+    # f(x) = A *(x-a)^3 + B*(x-a)^2 + C*(x-a) + D
+
+    with np.errstate(divide='raise', over='raise', invalid='raise'):
+        try:
+            C = fpa
+            db = b - a
+            dc = c - a
+            denom = (db * dc) ** 2 * (db - dc)
+            d1 = np.empty((2, 2))
+            d1[0, 0] = dc ** 2
+            d1[0, 1] = -db ** 2
+            d1[1, 0] = -dc ** 3
+            d1[1, 1] = db ** 3
+            [A, B] = np.dot(d1, np.asarray([fb - fa - C * db,
+                                            fc - fa - C * dc]).flatten())
+            A /= denom
+            B /= denom
+            radical = B * B - 3 * A * C
+            xmin = a + (-B + np.sqrt(radical)) / (3 * A)
+        except ArithmeticError:
+            return None
+    if not np.isfinite(xmin):
+        return None
+    return xmin
