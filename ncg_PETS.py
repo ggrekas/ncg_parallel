@@ -91,6 +91,8 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
         _print_result_info(warnflag, fval, k, maxiter, disp)
 
     del pk
+    if return_all == True:
+        return xk, warnflag
     return xk
 
 
