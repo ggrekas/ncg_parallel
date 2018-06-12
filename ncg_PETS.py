@@ -47,7 +47,7 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
     old_old_fval = old_fval + gfk.norm('l2') / 2.0 #None #
 
     pk = x0.copy()
-    pk.set_local(-gfk.array() ) #pk = -gfk
+    pk.set_local(-gfk.get_local() ) #pk = -gfk
 
     gnorm = gfk.norm('linf')  #gnorm = vecnorm(gfk, ord=norm)
     while (gnorm > gtol) and (k < maxiter):
@@ -72,10 +72,10 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
             gfkp1 = myfprime(xk)  #malloc?
 
         # is the substruction in set local faster or slower than axpy
-        gfk.set_local(gfkp1.array() - gfk.array())
+        gfk.set_local(gfkp1.get_local() - gfk.get_local())
         beta_k = max(0, gfk.inner(gfkp1) / deltak)
 
-        pk.set_local(-gfkp1.array() + beta_k * pk.array() )
+        pk.set_local(-gfkp1.get_local() + beta_k * pk.get_local() )
         #pk = -gfkp1 + beta_k * pk
         del gfk; gfk = gfkp1
 
