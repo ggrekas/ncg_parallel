@@ -37,7 +37,7 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
     # gfk_ar = myfprime(x0.array()) #change meeeeeee
     # gfk = PETScVector(comm, x0.size())
     # gfk.set_local(gfk_ar)
-    gfk = myfprime(x0)  # change meeeeeee
+    gfk = myfprime(x0).copy()  # change meeeeeee
 
     k = 0
     xk = x0
@@ -77,7 +77,7 @@ def minimize_cg(fun, x0, fprime=None, args=(), callback=None,
 
         pk.set_local(-gfkp1.get_local() + beta_k * pk.get_local() )
         #pk = -gfkp1 + beta_k * pk
-        del gfk; gfk = gfkp1
+        gfk.set_local(gfkp1.get_local()) #del gfk; gfk = gfkp1
 
         gnorm = gfk.norm(norm) #gnorm = vecnorm(gfk, ord=norm)
         if callback is not None:
